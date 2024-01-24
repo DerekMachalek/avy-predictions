@@ -55,6 +55,7 @@ def pull_avy_severity(image_path):
         pixel_color = pix[i, j]
         severityValues.append(color_dict[pixel_color])
 
+    # avy severity from N -> NW clockwise (8 values) for all L elevations and then repeated for M and H.
     return severityValues
 
 print(pull_avy_severity(r'C:\Users\derek\Documents\Coding Practice\avy-predictions\test_avy_image1.png'))
