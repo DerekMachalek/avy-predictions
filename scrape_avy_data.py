@@ -205,14 +205,14 @@ def create_avy_sql_data_table(current_date, end_date):
     engine = create_engine("mysql://{user}:{pw}@{host}/{db}".format(host=hostname, db=database, user=username, pw=password))
 
     # create table from SQL
-    df.to_sql("avy_risk", engine, if_exists = 'replace')
+    df.to_sql("avy_risk", engine, if_exists = 'append')
 
     return -1
 
 
 
 current_date = datetime.datetime(2023, 10, 1)
-end_date = datetime.datetime(2024, 1, 20)
+end_date = datetime.datetime(2024, 1, 22)
 create_avy_sql_data_table(current_date, end_date)
 
 
