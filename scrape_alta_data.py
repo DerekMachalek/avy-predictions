@@ -3,6 +3,9 @@ import pandas as pd
 import datetime
 import helium
 import time
+import mysql.connector
+import os
+from sqlalchemy import create_engine
 
 # write a function that pulls snow data from the alta-collins station on weather.gov
 # return 
@@ -67,20 +70,139 @@ def historical_alta_snow(start_year, start_month, start_day, start_hour, duratio
     # create pandas data frame
     snow_df = pd.DataFrame(data_to_add, columns = titles_text)
 
-    # sort by date/time
-    print(snow_df.sort_values('Date/Time (L)'))
-
     return snow_df
 
-# scrape data frame
-test_df = historical_alta_snow(2024, 1, 6, 5, 24)
 
-# save to csv
-test_df.to_csv(r'C:\Users\derek\Documents\Coding Practice\avy-predictions\avy-data1', index = False)
+def create_hourly_alta_data(cursor):
 
-# load from csv
+    # delete table if it exists
+    cursor.execute("DROP TABLE IF EXISTS avy_alta_hourly")
 
-# print out data
-print(test_df)
+    # scrape data to pandas dataframe
+    snow_df = historical_alta_snow(2023, 10, 1, 5, 2640)
 
-#adjust dates and select values in specified range
+    #set up engine connection for reading and writing to sql engine
+    hostname = "localhost"
+    username = os.getenv('avy_db_username')
+    password = os.getenv('avy_db_password')
+    database = "avalanche_analysis"
+
+    # create a new table with this data
+    engine = create_engine("mysql://{user}:{pw}@{host}/{db}".format(host=hostname, db=database, user=username, pw=password))
+
+    # create table from SQL
+    snow_df.to_sql("avy_alta_hourly", engine, if_exists = 'append')
+
+
+#create sql connection
+db = mysql.connector.connect(
+    host = "localhost",
+    # use environmental variables so we can push to public GitHub
+    user = os.getenv('avy_db_username'),
+    passwd = os.getenv('avy_db_password'),
+    #select which database we are looking at
+    database = "avalanche_analysis"
+)
+
+cursor = db.cursor(buffered = True)
+
+
+# attempt to query from the database of hourly data and delete if it does not exist
+try:
+    cursor.execute("SELECT * FROM avy_alta_hourly")
+except:
+    print('there was an exception')
+    create_hourly_alta_data(cursor)
+    cursor.execute("SELECT * FROM avy_alta_hourly")
+
+# pull values out into pandas dataframe from SQL and remove index
+df = pd.read_sql("SELECT * FROM avy_alta_hourly", db)
+df = df.drop(columns=['index'])
+
+# only keep 
+columns_to_keep = ['Date/Time (L)', 'Temp. (°F)', '1 HourPrecip(in)']
+df = df[columns_to_keep]
+
+# update so january has year 2024 and everything else has year 2023
+for i in range(len(df)):
+    date = df.iloc[i,0]
+
+    if date[:3] == 'Jan':
+        Year = 2024
+    else:
+        Year = 2023
+
+    date = f'{date}, {Year}'
+
+    datetime_object = datetime.datetime.strptime(date, '%b %d, %I:%M %p, %Y')
+
+    df.iloc[i,0] = datetime_object
+
+df = df.sort_values(by='Date/Time (L)')
+
+# find the first encounter of 4 AM
+for i in range(len(df)):
+    date = df.iloc[i,0]
+    if date.hour == 5:
+        index_start = i
+        break
+
+# find the last encounter of 4 AM
+for i in range(len(df)):
+    date = df.iloc[len(df) - i - 1,0]
+    if date.hour == 4:
+        index_end = len(df) - i
+        break
+
+#cut new data frame with start and end at 4 AM
+df = df.iloc[index_start:index_end, :]
+
+# new data from pandas for consolidation
+weather_data =[]
+
+total_hours = 0
+total_temp = 0
+total_precip = 0
+
+print(df)
+
+for i in range(len(df)):
+    # pull out the hour
+    date = df.iloc[i,0]
+    hour = date.hour
+
+    # handle missing temps
+    if df.iloc[i,1] == '':
+        temp = 40
+    else:
+        temp = float(df.iloc[i,1])
+
+    total_hours += 1
+    total_temp += temp
+    total_precip += float(df.iloc[i,2])
+
+    # if it is 4 AM add to totals and reset
+    if hour == 4:
+
+        weather_data.append([date, total_temp/total_hours, total_precip])
+
+        total_hours = 0
+        total_temp = 0
+        total_precip = 0
+
+#create new pandas dataframe
+# put data and columns together in a data frame
+daily_df = pd.DataFrame(weather_data, columns=["date", "average temp (F)", "total precip (in)"])
+
+#set up engine connection for reading and writing to sql engine
+hostname = "localhost"
+username = os.getenv('avy_db_username')
+password = os.getenv('avy_db_password')
+database = "avalanche_analysis"
+
+# create a new table with this data
+engine = create_engine("mysql://{user}:{pw}@{host}/{db}".format(host=hostname, db=database, user=username, pw=password))
+
+# create table from SQL
+daily_df.to_sql("avy_alta_daily_data", engine, if_exists = 'append')
+

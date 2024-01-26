@@ -3,4 +3,4 @@ USE avalanche_analysis;
 
 -- Pull out everythin
 SELECT *
-FROM avy_risk
+FROM avy_alta_hourly
